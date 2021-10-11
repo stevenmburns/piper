@@ -34,7 +34,7 @@ Read from r(i) to get the value of the flop (for i > 0)
   }
 }
 
-class Piper extends Module {
+class Piper  extends Module {
 
   val io = IO(new Bundle {
     val enable = Input(Bool())
@@ -44,7 +44,7 @@ class Piper extends Module {
     val out = Output(UInt(24.W))
   })
 
-  val n = 20
+  val n = 40
 
   val enables = Helper.DelayLine(io.enable, n, tag="enables")
   val opcodes = Helper.DelayLine(io.opcode, n, tag="opcodes")
@@ -52,24 +52,24 @@ class Piper extends Module {
   val wraddrs = Helper.DelayLine(io.wraddr, n, tag="wraddrs")
   val data = Helper.DelayLineWire(UInt(24.W), n, tag="data")
 
-  val m = SyncReadMem( 256, UInt(24.W))
-
   val rd_latency = 1
-  val rd_stage = 2
+  assert(rd_latency == 1 || rd_latency == 0)
+  val rd_stage = rd_latency + 1
+  assert(rd_stage >= rd_latency + 1)
+  val ex_stage = rd_stage + 3
+  assert(ex_stage >= rd_stage)
+  val wr_stage = ex_stage + 2
+  assert(wr_stage >= ex_stage)
+  val ou_stage = ex_stage + 0
+  assert(ou_stage >= ex_stage)
 
-  assert(rd_stage > rd_latency)
+  val m = if (rd_latency == 1) SyncReadMem( 256, io.out.cloneType) else Mem( 256, io.out.cloneType)
 
-  val ex_stage = 2
-  val wr_stage = 4
-  val ou_stage = 5
-
-  val read_data = m.read(rdaddrs(rd_stage-1-rd_latency), enables(rd_stage-1-rd_latency))
-  // abnormal default cause when you don't want a pipe stage between rd and ex
-  val ex_inp = WireInit(read_data)
-  if (rd_stage < ex_stage) {
-    data(rd_stage) := read_data
-    ex_inp := data(ex_stage-1)
+  val read_data = WireInit(data(0).cloneType, init=DontCare)
+  when (enables(rd_stage-1-rd_latency)) {
+    read_data := m.read(rdaddrs(rd_stage-1-rd_latency))
   }
+  data(rd_stage) := read_data
 
   def alu(inp : UInt, op : UInt) : UInt = {
     val result = Wire(inp.cloneType)
@@ -87,14 +87,15 @@ class Piper extends Module {
     result
   }
 
-  data(ex_stage) := alu(ex_inp, opcodes(ex_stage-1))
-
+  // abnormal case when you don't want a pipe stage between rd and ex
+  val ex_data = alu((if (rd_stage < ex_stage) data(ex_stage-1) else read_data), opcodes(ex_stage-1))
+  data(ex_stage) := ex_data
 
   when (enables(wr_stage-1)) {
-    m.write( wraddrs(wr_stage-1), data(wr_stage-1))
+    m.write( wraddrs(wr_stage-1), (if (ex_stage < wr_stage) data(wr_stage-1) else ex_data))
   }
 
-  io.out := data(ou_stage)
+  io.out := (if (ex_stage < ou_stage) data(ou_stage) else ex_data)
 
 }
 
