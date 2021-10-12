@@ -15,6 +15,7 @@ class GenericTest extends FlatSpec with Matchers {
       ,isVerbose=true
 //      ,moreVcsFlags=Seq("-sverilog -notice")
 //      ,vcsCommandEdits="""s/\+vcs\+initreg\+random //"""
+      ,generateVcdOutput="foo.vcd"
     )
   }
 }
